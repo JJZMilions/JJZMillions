@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>JARVIS EDUCATION — PDF Ready</title>
+
+<!-- Three.js for 3D scene -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+<!-- PDF.js for PDF ingestion -->
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+  // Point pdf.js to its worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+</script>
+
+<style>
+  :root{
+    --bg:#0A0F1E; --line:rgba(0,231,255,.22); --glow:#00E7FF;
+    --success:#18FFC6; --error:#FF7A7A; --warn:#FFE66D; --info:#9AA8FF;
+    --text:#D7F8FF; --muted:#77B5C3; --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overflow:hidden}
+  .hud-grid{position:fixed;inset:0;pointer-events:none;opacity:.15;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(0,231,255,.08), transparent 60%),
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:100% 100%, 80px 80px, 80px 80px;}
+  .wrap,.screen{display:grid;grid-template-columns:1.3fr .8fr;gap:24px;padding:28px;height:100%}
+  h1{grid-column:1/-1;margin:0 0 6px 0;letter-spacing:.12em;font-weight:800;
+     font-size:22px;text-transform:uppercase;color:var(--glow);
+     text-shadow:0 0 16px var(--glow),0 0 40px #0087aa}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-content:start}
+  .card{background:linear-gradient(180deg,rgba(0,231,255,.06),rgba(0,231,255,.02));
+        border:1px solid rgba(0,231,255,.28);border-radius:var(--radius);
+        box-shadow:0 0 22px #00E7FF55, inset 0 0 10px #00E7FF22;
+        padding:18px;position:relative;overflow:hidden;cursor:pointer;
+        transition:transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s;}
+  .card:hover{transform:translateY(-2px);box-shadow:0 0 28px #00E7FF88, inset 0 0 14px #00E7FF33}
+  .title{font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+  .mini{height:10px;border-radius:6px;background:#06222a;border:1px solid rgba(0,231,255,.25);overflow:hidden}
+  .mini>span{display:block;height:100%;background:linear-gradient(90deg,var(--glow),#18FFC6)}
+  .badge{position:absolute;right:10px;top:10px;font-size:11px;padding:4px 8px;border-radius:10px;color:#00161b;
+         background:var(--info);box-shadow:0 0 12px #9AA8FF88}
+  .right{background:linear-gradient(180deg, rgba(0,231,255,.08), rgba(0,231,255,.02));
+         border:1px solid rgba(0,231,255,.28);border-radius:var(--radius);
+         box-shadow:0 0 22px #00E7FF55, inset 0 0 10px #00E7FF22;
+         padding:18px;display:grid;grid-template-rows:auto 1fr auto;gap:12px;}
+  .jarvis{place-self:center;width:80%;max-width:360px;opacity:.95;filter:drop-shadow(0 0 18px #00E7FFaa)}
+  .stars{display:flex;gap:6px;justify-content:center;margin-top:8px}
+  .star{width:18px;aspect-ratio:1;background:conic-gradient(from 0deg,var(--glow),#18FFC6);
+        -webkit-mask:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><path d="M316.9 17.8L354 150.2 489.6 150.2 381.2 232.4 418.3 364.8 316.9 282.6 215.5 364.8 252.6 232.4 144.2 150.2 279.8 150.2 316.9 17.8z"/></svg>') center/contain no-repeat;}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border-radius:10px;
+       border:1px solid rgba(0,231,255,.4);box-shadow:0 0 18px #00E7FF55 inset;color:var(--text);cursor:pointer;
+       background:linear-gradient(180deg,rgba(0,231,255,.14),rgba(0,231,255,.06));transition:.18s}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 0 22px #00E7FF88 inset}
+  .panel{background:linear-gradient(180deg, rgba(0,231,255,.06), rgba(0,231,255,.02));
+         border:1px solid rgba(0,231,255,.28);border-radius:16px;box-shadow:0 0 22px #00E7FF55, inset 0 0 10px #00E7FF22; padding:18px}
+  .footer{grid-column:1/-1;display:flex;gap:16px;margin-top:4px}
+  .stat{flex:1;background:linear-gradient(180deg, rgba(0,231,255,.05), rgba(0,231,255,.02));
+        border:1px solid rgba(0,231,255,.25);border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+  .k{color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .route{position:absolute;inset:0;background:var(--bg);display:none}
+  .route.active{display:block}
+  .controls{display:flex;gap:14px;flex-wrap:wrap}
+  .control{min-width:220px}
+  label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  input[type="range"]{width:100%}
+  .readout{font-variant-numeric:tabular-nums}
+  .progressbar{height:8px;background:#06222a;border:1px solid rgba(0,231,255,.25);border-radius:6px;overflow:hidden}
+  .progressbar>span{display:block;height:100%;background:linear-gradient(90deg,var(--glow),#18FFC6)}
+  .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(2,10,16,.6);backdrop-filter:blur(4px)}
+  .modal .box{width:min(680px,92vw)}
+  .modal.show{display:grid}
+  .high-contrast{--bg:#000;--text:#fff;--muted:#9fe;--line:rgba(0,255,255,.35)}
+  .low-motion *{transition:none !important;animation:none !important}
+  @media (max-width:1100px){ .wrap,.screen{grid-template-columns:1fr} .right{order:-1} }
+  /* Library / PDF UI */
+  .lib{display:grid;grid-template-columns:280px 1fr;gap:16px;height:100%}
+  .thumbs{overflow:auto;border:1px solid rgba(0,231,255,.25);border-radius:12px;padding:10px;display:grid;gap:10px;grid-auto-rows:min-content}
+  .thumb{border:1px solid rgba(0,231,255,.25);border-radius:8px;padding:6px;background:rgba(0,231,255,.04);cursor:pointer}
+  .thumb.selected{outline:2px solid var(--glow);box-shadow:0 0 14px #00E7FF88}
+  .slides{height:100%;display:grid;grid-template-rows:auto 1fr}
+  .slideArea{overflow:auto;border:1px solid rgba(0,231,255,.25);border-radius:12px;padding:16px}
+  .slide{background:rgba(0,231,255,.04);border:1px solid rgba(0,231,255,.25);border-radius:12px;padding:16px;margin-bottom:12px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:10px;border:1px solid rgba(0,231,255,.35);margin-left:6px;color:#00161b;background:var(--info);box-shadow:0 0 10px #9AA8FF88}
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<div class="route active" id="home">
+  <div class="wrap">
+    <h1>JARVIS EDUCATION</h1>
+
+    <section class="cards" id="tiles">
+      <div class="card" data-route="library">
+        <div class="badge">Library</div>
+        <div class="title">PDF Loader</div>
+        <div class="mini"><span style="width:10%"></span></div>
+        <small class="muted">Import any PDF • build lessons</small>
+      </div>
+      <div class="card" data-route="fractions">
+        <div class="badge">Math</div>
+        <div class="title">Fractions Fun (3D)</div>
+        <div class="mini"><span style="width:32%"></span></div>
+        <small class="muted">interactive • quizzes</small>
+      </div>
+      <div class="card" data-route="reading">
+        <div class="badge">Reading</div>
+        <div class="title">Reader</div>
+        <div class="mini"><span style="width:5%"></span></div>
+        <small class="muted">slides • read aloud</small>
+      </div>
+      <div class="card" data-route="science">
+        <div class="badge">Science</div>
+        <div class="title">Simulations</div>
+        <div class="mini"><span style="width:18%"></span></div>
+        <small class="muted">placeholder</small>
+      </div>
+      <div class="card" data-route="memory">
+        <div class="badge">Memory</div>
+        <div class="title">Training</div>
+        <div class="mini"><span style="width:40%"></span></div>
+        <small class="muted">placeholder</small>
+      </div>
+      <div class="card" data-route="ai">
+        <div class="badge">AI Skills</div>
+        <div class="title">Patterns</div>
+        <div class="mini"><span style="width:60%"></span></div>
+        <small class="muted">placeholder</small>
+      </div>
+    </section>
+
+    <aside class="right">
+      <svg class="jarvis" viewBox="0 0 256 512" fill="none" stroke="var(--glow)" stroke-width="2">
+        <path d="M128 20c40 0 60 30 60 72s-20 72-60 72-60-30-60-72 20-72 60-72z" fill="rgba(0,231,255,.05)"/>
+        <path d="M70 180h116c22 40 38 90 38 150v90c0 8-6 14-14 14H46c-8 0-14-6-14-14v-90c0-60 16-110 38-150z" fill="rgba(0,231,255,.05)"/>
+        <circle cx="128" cy="246" r="18" fill="rgba(0,231,255,.22)"/>
+      </svg>
+      <div class="stars" id="aiStars"></div>
+      <div class="toolbar">
+        <div>
+          <span class="k">Profile</span>
+          <select id="ageBand" class="btn" style="padding:6px 10px">
+            <option>Age 5–8</option><option>Age 9–12</option><option>Age 13–15</option>
+          </select>
+        </div>
+        <button class="btn" id="openSettings">Settings</button>
+      </div>
+      <div class="panel">
+        <div class="title">Personalized Learning</div>
+        <p class="muted">Use the Library to import any PDF. Build lessons and launch them in the tiles.</p>
+        <button class="btn" data-route="library">Open Library</button>
+      </div>
+    </aside>
+
+    <div class="footer">
+      <div class="stat"><span class="k">Stars Earned</span><strong id="stars">0</strong></div>
+      <div class="stat"><span class="k">Badges</span><strong id="badges">0</strong></div>
+      <div class="stat"><span class="k">Lessons Done</span><strong id="lessons">0</strong></div>
+    </div>
+  </div>
+</div>
+
+<!-- LIBRARY (PDF LOADER) -->
+<div class="route" id="library">
+  <div class="screen">
+    <div class="panel">
+      <div class="toolbar">
+        <div class="title">Library — PDF Loader</div>
+        <button class="btn" onclick="go('home')">← Back</button>
+      </div>
+
+      <div class="controls">
+        <div class="control">
+          <label>Open local PDF</label><br/>
+          <input type="file" id="pdfFile" accept="application/pdf"/>
+        </div>
+        <div class="control" style="min-width:360px">
+          <label>…or load from URL</label><br/>
+          <input id="pdfUrl" placeholder="https://example.com/book.pdf" style="width:100%;padding:8px;border-radius:10px;border:1px solid rgba(0,231,255,.35);background:rgba(0,231,255,.06);color:var(--text)"/>
+        </div>
+        <button class="btn" id="loadUrl">Load URL</button>
+        <div style="flex:1"></div>
+        <button class="btn" id="clearLibrary">Clear All</button>
+      </div>
+
+      <div class="lib" style="margin-top:10px">
+        <div>
+          <div class="title">Pages</div>
+          <div class="thumbs" id="thumbs"></div>
+        </div>
+        <div class="slides">
+          <div class="toolbar">
+            <div class="title">Lesson Builder</div>
+            <div>
+              <button class="btn" id="buildSlides">Build Slides</button>
+              <button class="btn" id="addLesson">Add Lesson</button>
+            </div>
+          </div>
+          <div class="panel" style="margin-bottom:10px">
+            <div class="controls">
+              <div class="control"><label>Lesson Title</label><input id="lessonTitle" class="btn" style="padding:8px 10px" placeholder="e.g., Fractions — Unit Fractions"></div>
+              <div class="control"><label>Assign To Tile</label>
+                <select id="lessonTile" class="btn" style="padding:8px 10px">
+                  <option value="reading">Reading (Reader)</option>
+                  <option value="fractions">Math (Fractions Lab)</option>
+                  <option value="science">Science</option>
+                  <option value="memory">Memory</option>
+                  <option value="ai">AI Skills</option>
+                </select></div>
+              <div class="control"><label>Age Band</label>
+                <select id="lessonAge" class="btn" style="padding:8px 10px"><option>5–8</option><option>9–12</option><option>13–15</option></select>
+              </div>
+            </div>
+          </div>
+          <div class="slideArea" id="slideArea">
+            <!-- slides preview -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="title">Your Lessons</div>
+      <div id="lessonList" style="display:grid;gap:8px"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- READER (slides + read aloud) -->
+<div class="route" id="reading">
+  <div class="screen">
+    <div class="panel">
+      <div class="toolbar">
+        <div>
+          <div class="title" id="readerTitle">Reader</div>
+          <small class="muted">Neon slides • read-aloud</small>
+        </div>
+        <div>
+          <button class="btn" onclick="go('home')">← Back</button>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="control"><label>Voice</label>
+          <select id="voiceSel" class="btn" style="padding:6px 10px"></select>
+        </div>
+        <div class="control"><label>Rate</label><input type="range" min="0.6" max="1.4" step="0.05" value="1" id="voiceRate"></div>
+        <div class="control"><label>Font Size</label><input type="range" min="14" max="28" value="16" id="fontSize"></div>
+        <button class="btn" id="speak">Read Aloud</button>
+        <button class="btn" id="stopSpeak">Stop</button>
+      </div>
+      <div class="slideArea" id="readerSlides" style="min-height:420px"></div>
+    </div>
+    <aside class="panel">
+      <div class="title">Lessons</div>
+      <div id="readerLessons" style="display:grid;gap:8px"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- FRACTIONS LAB (same as prior template, kept concise) -->
+<div class="route" id="fractions">
+  <div class="screen">
+    <div class="panel" style="display:grid;grid-template-rows:auto 1fr;">
+      <div class="toolbar">
+        <div>
+          <div class="title">Fractions Lab — 3D</div>
+          <small class="muted">Slice, compare, master equivalents</small>
+        </div>
+        <button class="btn" onclick="go('home')">← Back</button>
+      </div>
+      <div id="stage" style="position:relative;min-height:420px;border-radius:12px;overflow:hidden;border:1px solid rgba(0,231,255,.25)"></div>
+    </div>
+    <div class="panel">
+      <div class="title">Controls</div>
+      <div class="controls">
+        <div class="control"><label>Denominator</label><input type="range" min="2" max="16" value="8" id="den"><div class="readout"><strong id="denRO">8</strong></div></div>
+        <div class="control"><label>Numerator</label><input type="range" min="1" max="8" value="4" id="num"><div class="readout"><strong id="numRO">4</strong></div></div>
+        <div class="control"><label>Model</label><br/><select id="shape" class="btn" style="padding:6px 10px"><option value="pie">Pie</option><option value="ring">Ring</option><option value="bar">Bar</option></select></div>
+        <div class="control"><label>Readouts</label><div>Fraction: <strong id="fracTxt">4/8</strong></div><div>Simplified: <strong id="simpTxt">1/2</strong></div><div>Decimal: <strong id="decTxt">0.5</strong></div><div>Percent: <strong id="pctTxt">50%</strong></div></div>
+      </div>
+      <hr style="border-color:rgba(0,231,255,.2)">
+      <div class="title">Quick-Fire Compare (60s)</div>
+      <p class="muted">Choose the larger fraction to earn stars.</p>
+      <div id="qArea" style="display:flex;gap:10px;align-items:center;margin:8px 0">
+        <button class="btn" id="qA">A</button>
+        <div id="qTxt" class="readout" style="min-width:140px">—</div>
+        <button class="btn" id="qB">B</button>
+        <div style="flex:1"></div>
+        <div class="progressbar" style="width:180px"><span id="qTime" style="width:100%"></span></div>
+        <div class="readout" id="qScore" style="width:70px;text-align:right">0</div>
+        <button class="btn" id="qStart">Start</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Placeholder simple routes -->
+<div class="route" id="science"><div class="screen"><div class="panel"><div class="title">Science — Simulations</div><p class="muted">Hook your sims here.</p><button class="btn" onclick="go('home')">← Back</button></div></div></div>
+<div class="route" id="memory"><div class="screen"><div class="panel"><div class="title">Memory Training</div><p class="muted">Add n-back here.</p><button class="btn" onclick="go('home')">← Back</button></div></div></div>
+<div class="route" id="ai"><div class="screen"><div class="panel"><div class="title">AI Skills</div><p class="muted">Add pattern games here.</p><button class="btn" onclick="go('home')">← Back</button></div></div></div>
+
+<!-- Settings Modal -->
+<div class="modal" id="settings">
+  <div class="panel box">
+    <div class="toolbar"><div class="title">Settings</div><button class="btn" id="closeSettings">Close</button></div>
+    <div class="controls">
+      <div class="control"><label>SFX Volume</label><input type="range" min="0" max="1" step="0.01" id="volSfx" value="0.7"></div>
+      <div class="control"><label>Music Volume</label><input type="range" min="0" max="1" step="0.01" id="volMusic" value="0.25"></div>
+      <div class="control"><label><input type="checkbox" id="mute"> Mute All</label></div>
+      <div class="control"><label><input type="checkbox" id="lowMotion"> Low Motion</label></div>
+      <div class="control"><label><input type="checkbox" id="hiContrast"> High Contrast</label></div>
+    </div>
+  </div>
+</div>
+
+<!-- HUD grid overlay -->
+<div class="hud-grid" aria-hidden="true"></div>
+
+<script>
+/* ========= Utilities & State ========= */
+const $ = q => document.querySelector(q);
+const $$ = q => [...document.querySelectorAll(q)];
+const state = JSON.parse(localStorage.getItem('jarvisState')||'{}');
+state.stars ??= 0; state.badges ??= 0; state.lessons ??= 0; state.aiStars ??= 4;
+state.lessonsStore ??= [];  // {id,title,tile,age,slides:[{text,img,srcPage}]}
+function save(){ localStorage.setItem('jarvisState', JSON.stringify(state)); }
+function setText(id,v){ const el = (id[0]==='#')?$(id):$('#'+id); if(el) el.textContent=v; }
+function refresh(){ setText('stars',state.stars); setText('badges',state.badges); setText('lessons',state.lessons); drawStars(); renderLessonList(); renderReaderLessonList(); }
+function drawStars(n=state.aiStars){ const box=$('#aiStars'); box.innerHTML=''; for(let i=0;i<5;i++){ const d=document.createElement('div'); d.className='star'; if(i>=n) d.style.filter='grayscale(1) opacity(.3)'; box.appendChild(d);} }
+
+/* ========= Router ========= */
+function go(route){ $$('.route').forEach(r=>r.classList.remove('active')); $('#'+route).classList.add('active'); play('whoosh'); if(route==='reading') renderReaderLessonList(); }
+$$('.card, .panel [data-route]').forEach(el=>el.addEventListener('click', e=>go(el.dataset.route||'library')));
+
+/* ========= Settings ========= */
+$('#openSettings').onclick=()=>$('#settings').classList.add('show');
+$('#closeSettings').onclick=()=>$('#settings').classList.remove('show');
+const settings={sfx:.7,music:.25,mute:false};
+['volSfx','volMusic','mute','lowMotion','hiContrast'].forEach(id=>{
+  $('#'+id).addEventListener('input', e=>{
+    if(id==='volSfx') sfxGain.gain.value=settings.sfx=+e.target.value;
+    if(id==='volMusic'){ settings.music=+e.target.value; musicGain.gain.value=settings.music*(settings.mute?0:1); }
+    if(id==='mute'){ settings.mute=e.target.checked; master.gain.value=settings.mute?0:1; }
+    if(id==='lowMotion'){ document.body.classList.toggle('low-motion', e.target.checked); }
+    if(id==='hiContrast'){ document.body.classList.toggle('high-contrast', e.target.checked); }
+  });
+});
+
+/* ========= Audio Engine ========= */
+const actx = new (window.AudioContext||window.webkitAudioContext)();
+const master = actx.createGain(); master.connect(actx.destination);
+const musicGain = actx.createGain(); musicGain.gain.value=settings.music; musicGain.connect(master);
+const sfxGain = actx.createGain(); sfxGain.gain.value=settings.sfx; sfxGain.connect(master);
+function beep(freq=880, dur=.12, type='sine', gain=.15){
+  if(settings.mute) return; const o=actx.createOscillator(), g=actx.createGain();
+  o.type=type; o.frequency.value=freq; g.gain.value=gain; o.connect(g).connect(sfxGain); o.start();
+  g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur); o.stop(actx.currentTime+dur+.02);
+}
+function play(name){
+  if(settings.mute) return;
+  switch(name){case 'ding':beep(1100,.12,'triangle',.2); setTimeout(()=>beep(1500,.1,'sine',.12),80); break;
+    case 'buzz':beep(160,.18,'sawtooth',.12); break; case 'snap':beep(600,.07,'square',.12); break;
+    case 'servo':beep(300,.05,'sine',.06); setTimeout(()=>beep(520,.05,'sine',.06),40); break;
+    case 'fanfare':[880,1175,1560].forEach((f,i)=>setTimeout(()=>beep(f,.15,'triangle',.22),i*100)); break;
+    case 'whoosh':beep(240,.06,'sine',.04); setTimeout(()=>beep(480,.06,'sine',.04),60); break;
+    default:beep(480,.06,'sine',.05);}
+}
+document.addEventListener('click',()=>actx.resume(),{once:true});
+/* Ambient hum */
+(function(){const o=actx.createOscillator(), g=actx.createGain(); o.type='sine'; o.frequency.value=48; g.gain.value=.02;
+  o.connect(g).connect(musicGain); const l=actx.createOscillator(), lg=actx.createGain(); l.frequency.value=.08; lg.gain.value=10;
+  l.connect(lg).connect(o.frequency); o.start(); l.start();})();
+
+/* ========= PDF LOADER & BUILDER ========= */
+let pdfDoc=null, pdfName='(untitled)', pdfPages=0;
+const thumbs = $('#thumbs'), slideArea = $('#slideArea');
+
+async function loadPdf(src){
+  thumbs.innerHTML=''; slideArea.innerHTML=''; pdfDoc = await pdfjsLib.getDocument(src).promise;
+  pdfPages = pdfDoc.numPages; pdfName = typeof src==='string' ? (src.split('/').pop()||'(untitled)') : '(local pdf)';
+  for(let p=1; p<=pdfPages; p++){
+    const page = await pdfDoc.getPage(p);
+    const scale = 0.25, viewport = page.getViewport({scale});
+    const c = document.createElement('canvas'); c.width = viewport.width; c.height = viewport.height;
+    const ctx = c.getContext('2d'); await page.render({canvasContext:ctx, viewport}).promise;
+    const wrap = document.createElement('div'); wrap.className='thumb'; wrap.dataset.page=p;
+    const lbl = document.createElement('div'); lbl.className='muted'; lbl.style.margin='6px 0'; lbl.textContent=`Page ${p}`;
+    wrap.appendChild(c); wrap.appendChild(lbl); thumbs.appendChild(wrap);
+    wrap.onclick=()=>{ wrap.classList.toggle('selected'); play('snap'); };
+  }
+  play('ding');
+}
+
+$('#pdfFile').addEventListener('change', e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const fr = new FileReader(); fr.onload = ev => loadPdf({data:new Uint8Array(ev.target.result)}); fr.readAsArrayBuffer(f);
+});
+$('#loadUrl').onclick=()=>{ const u=$('#pdfUrl').value.trim(); if(u) loadPdf(u); };
+$('#clearLibrary').onclick=()=>{ thumbs.innerHTML=''; slideArea.innerHTML=''; pdfDoc=null; };
+
+async function extractPageText(page){
+  const txt = await page.getTextContent(); const s = txt.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+  return s;
+}
+async function buildSlidesFromSelection(){
+  if(!pdfDoc){ alert('Load a PDF first.'); return; }
+  slideArea.innerHTML=''; const pages = $$('.thumb.selected').map(t=>+t.dataset.page).sort((a,b)=>a-b);
+  if(pages.length===0){ alert('Select pages in the left column.'); return; }
+  for(const p of pages){
+    const page = await pdfDoc.getPage(p);
+    // render image at higher scale
+    const scale=.7, viewport=page.getViewport({scale});
+    const c=document.createElement('canvas'); c.width=viewport.width; c.height=viewport.height;
+    const ctx=c.getContext('2d'); await page.render({canvasContext:ctx, viewport}).promise;
+    const imgURL = c.toDataURL('image/png');
+
+    // text extract
+    const text = await extractPageText(page);
+    // lightweight summarizer: break into bullet-ish chunks
+    const bullets = text.split(/(?<=[\.\!\?])\s+/).slice(0,6);
+
+    const slide = document.createElement('div'); slide.className='slide';
+    slide.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <img src="${imgURL}" alt="p${p}" style="max-width:300px;border:1px solid rgba(0,231,255,.25);border-radius:10px"/>
+        <div style="flex:1;min-width:260px">
+          <div class="title">Slide from ${pdfName} <span class="chip">p.${p}</span></div>
+          <ul id="ul-${p}" style="margin-top:8px"></ul>
+        </div>
+      </div>`;
+    slideArea.appendChild(slide);
+    const ul = slide.querySelector(`#ul-${p}`);
+    bullets.forEach(b=>{ const li=document.createElement('li'); li.textContent=b; ul.appendChild(li); });
+  }
+  play('ding');
+}
+
+$('#buildSlides').onclick=buildSlidesFromSelection;
+
+$('#addLesson').onclick=()=>{
+  const title = $('#lessonTitle').value.trim() || `Lesson from ${pdfName}`;
+  const tile = $('#lessonTile').value; const age = $('#lessonAge').value;
+  const slides = [...slideArea.querySelectorAll('.slide')].map(s=>{
+    const page = +s.querySelector('.chip').textContent.replace('p.','');
+    const text = [...s.querySelectorAll('li')].map(li=>li.textContent).join(' ');
+    const img = s.querySelector('img').src;
+    return {text,img,srcPage:page};
+  });
+  if(slides.length===0){ alert('Build slides first.'); return; }
+  const id = 'L'+Date.now();
+  state.lessonsStore.push({id,title,tile,age,slides});
+  state.lessons++; state.badges++; save(); refresh(); play('fanfare');
+};
+
+/* Render sidebar lessons (Library) */
+function renderLessonList(){
+  const list = $('#lessonList'); list.innerHTML='';
+  state.lessonsStore.forEach(L=>{
+    const row = document.createElement('div'); row.className='stat';
+    row.innerHTML = `<div><div class="k">${L.tile.toUpperCase()} • ${L.age}</div><strong>${L.title}</strong></div>
+      <div><button class="btn" onclick="openLesson('${L.id}')">Open</button></div>`;
+    list.appendChild(row);
+  });
+}
+function openLesson(id){
+  const L = state.lessonsStore.find(x=>x.id===id); if(!L) return;
+  // for Reading tile, push to reader
+  selectedLessonId=L.id; renderReader(L); go('reading');
+}
+
+/* ========= Reader (slides + TTS) ========= */
+let selectedLessonId=null;
+function renderReaderLessonList(){
+  const list=$('#readerLessons'); list.innerHTML='';
+  state.lessonsStore.forEach(L=>{
+    const b=document.createElement('button'); b.className='btn'; b.textContent=L.title;
+    b.onclick=()=>{ selectedLessonId=L.id; renderReader(L); }; list.appendChild(b);
+  });
+}
+function renderReader(L){
+  $('#readerTitle').textContent = L.title;
+  const R = $('#readerSlides'); R.innerHTML='';
+  L.slides.forEach((s,i)=>{
+    const div=document.createElement('div'); div.className='slide';
+    div.innerHTML = `<div class="title">Slide ${i+1} <span class="chip">p.${s.srcPage}</span></div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <img src="${s.img}" style="max-width:320px;border:1px solid rgba(0,231,255,.25);border-radius:10px"/>
+        <p class="slideText" style="flex:1;min-width:260px;margin:0">${s.text}</p>
+      </div>`;
+    R.appendChild(div);
+  });
+}
+
+/* TTS */
+const voiceSel = $('#voiceSel'); let voices=[];
+function loadVoices(){ voices = speechSynthesis.getVoices(); voiceSel.innerHTML=''; voices.forEach(v=>{ const o=document.createElement('option'); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; voiceSel.appendChild(o); }); }
+loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;
+$('#fontSize').oninput=e=> $$('#reading .slideText').forEach(p=>p.style.fontSize=e.target.value+'px');
+let speaking=false;
+$('#speak').onclick=()=>{
+  if(speaking) return; const slides=$$('#reading .slideText'); if(!slides.length) return;
+  speaking=true; const rate=+$('#voiceRate').value; const vName=voiceSel.value;
+  (function speakSeq(i=0){
+    if(i>=slides.length){ speaking=false; play('fanfare'); return; }
+    const u = new SpeechSynthesisUtterance(slides[i].textContent); u.rate=rate;
+    if(vName){ const V = voices.find(x=>x.name===vName); if(V) u.voice=V; }
+    u.onend=()=>speakSeq(i+1); speechSynthesis.speak(u);
+  })();
+};
+$('#stopSpeak').onclick=()=>{ speechSynthesis.cancel(); speaking=false; };
+
+/* ========= Fractions 3D (same core as prior) ========= */
+let scene,camera,renderer,controls,pieGroup,N=8,K=4,SHAPE='pie';
+function init3D(){
+  const el = $('#stage'); el.innerHTML='';
+  renderer = new THREE.WebGLRenderer({antialias:true,alpha:true}); renderer.setSize(el.clientWidth, el.clientHeight); el.appendChild(renderer.domElement);
+  scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(45, el.clientWidth/el.clientHeight, .1, 100); camera.position.set(3.2,2.6,3.6);
+  const amb = new THREE.AmbientLight(0x66ccff,.5); scene.add(amb); const dir = new THREE.DirectionalLight(0x00e7ff,1.2); dir.position.set(3,4,2); scene.add(dir);
+  const grid = new THREE.GridHelper(10,20,0x004d59,0x003b44); grid.position.y=-.5; scene.add(grid);
+  controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping=true;
+  pieGroup = new THREE.Group(); scene.add(pieGroup);
+  window.addEventListener('resize',()=>{ renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect=el.clientWidth/el.clientHeight; camera.updateProjectionMatrix(); });
+  (function anim(){ controls.update(); renderer.render(scene,camera); requestAnimationFrame(anim); })();
+}
+function buildPie(type,n=8,k=4){
+  pieGroup.clear(); const R=1,H=.3;
+  const on = new THREE.MeshPhongMaterial({color:0x00e7ff, emissive:0x004455, shininess:80, transparent:true, opacity:.95});
+  const off= new THREE.MeshPhongMaterial({color:0x04323a, emissive:0x001318, shininess:30, transparent:true, opacity:.9});
+  if(type==='bar'){
+    const W=2,T=.2,gap=.02; for(let i=0;i<n;i++){ const g=new THREE.BoxGeometry(W/n-gap,H,.8); const m=i<k?on:off; const b=new THREE.Mesh(g,m); b.position.set(-W/2+(i+.5)*(W/n),0,0); pieGroup.add(b); }
+  }else{
+    const ring=(type==='ring');
+    for(let i=0;i<n;i++){ const a1=(i+1)/n*2*Math.PI, a0=i/n*2*Math.PI; const shape=new THREE.Shape();
+      if(!ring){ shape.absarc(0,0,R,a0,a1,false); shape.lineTo(0,0); }
+      else{ shape.absarc(0,0,R,a0,a1,false); const hole=new THREE.Path(); hole.absarc(0,0,R*0.55,a1,a0,true); shape.holes.push(hole); }
+      const g = new THREE.ExtrudeGeometry(shape,{depth:H,bevelEnabled:false}); const m=i<k?on:off; const s=new THREE.Mesh(g,m); s.rotation.x=-Math.PI/2; pieGroup.add(s); }
+  } play('servo');
+}
+function gcd(a,b){return b?gcd(b,a%b):a;}
+function updateReadouts(){
+  const g=gcd(K,N), sN=K/g, sD=N/g, dec=(K/N).toFixed(3).replace(/\.0+$/,''), pct=Math.round(K/N*100);
+  setText('denRO',N); setText('numRO',K); setText('fracTxt',`${K}/${N}`); setText('simpTxt',`${sN}/${sD}`); setText('decTxt',dec); setText('pctTxt',pct+'%');
+}
+function sync3D(){ $('#num').max=N; buildPie(SHAPE,N,K); updateReadouts(); }
+['den','num','shape'].forEach(id=>$('#'+id).addEventListener('input',e=>{
+  if(id==='den'){ N=+e.target.value; if(K>N) K=N; play('snap'); } if(id==='num'){ K=+e.target.value; play('snap'); } if(id==='shape'){ SHAPE=e.target.value; }
+  sync3D();
+}));
+
+/* Quick-Fire Compare */
+let qTimer=null,qLeft=60,qScore=0,qA=[1,2],qB=[1,3];
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function newPair(){ const d1=rnd(2,12),n1=rnd(1,d1-1),d2=rnd(2,12),n2=rnd(1,d2-1); qA=[n1,d1]; qB=[n2,d2]; setText('qTxt',`${n1}/${d1}  vs  ${n2}/${d2}`); }
+function startQuick(){ if(qTimer) return; qLeft=60;qScore=0; setText('qScore',0); newPair(); qTimer=setInterval(()=>{ qLeft--; $('#qTime').style.width=(qLeft/60*100)+'%'; if(qLeft<=0){ clearInterval(qTimer); qTimer=null; endQuick(); }},1000); }
+function choose(side){ if(!qTimer) return; const a=qA[0]/qA[1], b=qB[0]/qB[1]; const ok = side==='A'?a>b:b>a; if(ok){ qScore++; state.stars++; play('ding'); } else { qScore=Math.max(0,qScore-1); play('buzz'); } setText('qScore',qScore); newPair(); }
+function endQuick(){ state.lessons++; if(qScore>=10){ state.badges++; play('fanfare'); } save(); refresh(); setText('qTxt',`Done! Score: ${qScore}`); }
+$('#qStart').onclick=startQuick; $('#qA').onclick=()=>choose('A'); $('#qB').onclick=()=>choose('B');
+
+/* Initialize when entering Fractions */
+const entryObs=new MutationObserver(()=>{ if($('#fractions').classList.contains('active') && !renderer){ init3D(); sync3D(); }});
+entryObs.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+
+/* ========= Boot ========= */
+refresh();
+</script>
+</body>
+</html>
