@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EINZBROCK • Super Dashboard (Gemini Canvas)</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    /* Tailwind config: soft glassmorphism + brand tokens */
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui"] },
+          colors: {
+            brand: {
+              50: "#eef7ff",
+              100: "#d7ebff",
+              200: "#b4d7ff",
+              300: "#8ec2ff",
+              400: "#66a7ff",
+              500: "#3b86ff",
+              600: "#2c67db",
+              700: "#214db7",
+              800: "#1c4196",
+              900: "#162f6b",
+            },
+            emerald: {
+              500: "#10b981",
+              600: "#059669",
+            },
+            amethyst: { 500: "#9965f4" },
+            diamond: { 500: "#a3f3ff" }
+          },
+          boxShadow: {
+            glow: "0 0 0 1px rgba(255,255,255,0.05), 0 10px 40px rgba(59,134,255,0.25)",
+          },
+          backdropBlur: { xs: '2px' },
+        }
+      }
+    }
+  </script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+
+  <!-- React 18 UMD + Babel for in-browser JSX -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Recharts UMD -->
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
+
+  <!-- Day.js for dates -->
+  <script src="https://unpkg.com/dayjs@1.11.13/dayjs.min.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.13/plugin/weekday.js"></script>
+  <script src="https://unpkg.com/dayjs@1.11.13/plugin/isoWeek.js"></script>
+  <script>dayjs.extend(dayjs_plugin_weekday); dayjs.extend(dayjs_plugin_isoWeek);</script>
+
+  <!-- Papa Parse (CSV import) -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- jsPDF (one-click PDF snapshots) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+  <style>
+    /* Animated brand background */
+    .bg-orbit {
+      background: radial-gradient(1200px 600px at 10% 10%, rgba(59,134,255,0.12), transparent 60%),
+                  radial-gradient(900px 500px at 90% 10%, rgba(16,185,129,0.12), transparent 60%),
+                  linear-gradient(120deg, rgba(20,24,48,1) 0%, rgba(10,12,24,1) 100%);
+    }
+    .glass {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .touch-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+    .touch-scrollbar::-webkit-scrollbar-thumb { background: #2c67db55; border-radius: 9999px; }
+    .no-tap-highlight { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="min-h-screen bg-orbit text-white antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+    const { ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+
+    /***********************************\
+     * Utility: Persistent App Storage *
+    \***********************************/
+    const STORAGE_KEY = "einzbrock_super_dashboard_v2";
+    const loadState = (fallback) => {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? fallback; } catch (e) { return fallback; }
+    };
+    const saveState = (data) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {} };
+
+    /***********************************\
+     * Seed Data (safe defaults)       *
+    \***********************************/
+    const seed = {
+      profile: { owner: "JASON", theme: "dark" },
+      finance: {
+        accounts: [
+          { id: "chk", name: "Checking", balance: 4200 },
+          { id: "sav", name: "Savings (HYSA)", balance: 12500 },
+          { id: "cc1", name: "Goldman Sachs CC", balance: -1250 },
+        ],
+        debts: [
+          { id: "mort", name: "Mortgage", balance: 285000, apr: 6.50, due: "2025-09-15", min: 1725 },
+          { id: "rcw", name: "RC Willey", balance: 1800, apr: 0.00, due: dayjs().add(7, 'day').format('YYYY-MM-DD'), min: 305 },
+          { id: "gsc", name: "Goldman Sachs", balance: 1250, apr: 23.99, due: dayjs().add(9, 'day').format('YYYY-MM-DD'), min: 250 },
+        ],
+        incomes: [
+          { id: "pay1", date: dayjs().startOf('month').add(1,'week').format('YYYY-MM-DD'), source: "Paycheck", amount: 2100 },
+          { id: "pay2", date: dayjs().startOf('month').add(3,'week').format('YYYY-MM-DD'), source: "Paycheck", amount: 2100 },
+        ],
+        expenses: [
+          { id: "exp1", date: dayjs().format('YYYY-MM-DD'), category: "Needs", label: "Groceries", amount: 165.73 },
+          { id: "exp2", date: dayjs().format('YYYY-MM-DD'), category: "Wants", label: "Dining", amount: 42.18 },
+          { id: "exp3", date: dayjs().subtract(2,'day').format('YYYY-MM-DD'), category: "Needs", label: "Gas", amount: 58.20 },
+        ],
+        goals: [
+          { id: "g1", name: "Emergency Fund $15k", target: 15000, current: 7500 },
+          { id: "g2", name: "Credit Card Paydown", target: 1250, current: 400 },
+        ],
+        rates: { hysa_apr: 4.50, cc_avg_apr: 23.99, mortgage_apr: 6.50 },
+      },
+      portfolio: {
+        positions: [
+          { id: "p1", symbol: "VTI", name: "Total US Market", value: 8200, change: 0.8 },
+          { id: "p2", symbol: "VXUS", name: "Intl ex-US", value: 3400, change: -0.3 },
+          { id: "p3", symbol: "BND", name: "Total Bond", value: 2100, change: 0.2 },
+        ]
+      },
+      legal: {
+        toolkit: [
+          { id: "l1", title: "Task: Draft Motion Skeleton", status: "todo" },
+          { id: "l2", title: "Assemble Exhibits", status: "in-progress" },
+        ],
+        aiScratch: "" // free-form editor content
+      },
+      family: {
+        kids: [ { name: "Zoe", badge: "Math Star" }, { name: "David", badge: "Helper" } ],
+        todos: [ { id: "k1", text: "Practice multiplication (10m)", done: false } ]
+      },
+      system: { diagnostics: [], telemetry: [] }
+    };
+
+    /***********************************\
+     * Helpers                         *
+    \***********************************/
+    const currency = (n) => n?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) ?? '$0.00';
+    const sum = (arr, fn = (x)=>x) => arr.reduce((a, b) => a + (fn(b) || 0), 0);
+
+    function usePersistentState(key, initial) {
+      const [st, setSt] = useState(() => {
+        const loaded = loadState(seed);
+        return (loaded?.[key]) ?? initial;
+      });
+      useEffect(() => {
+        const current = loadState(seed);
+        saveState({ ...current, [key]: st });
+      }, [st]);
+      return [st, setSt];
+    }
+
+    const SectionCard = ({ title, right, children, className = "" }) => (
+      <div className={`glass rounded-2xl p-5 shadow-glow ${className}`}>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <h3 className="text-lg font-semibold tracking-wide">{title}</h3>
+          <div className="flex items-center gap-2">{right}</div>
+        </div>
+        {children}
+      </div>
+    );
+
+    const Stat = ({ label, value, sub }) => (
+      <div className="glass rounded-xl p-4">
+        <p className="text-xs uppercase tracking-widest text-white/60">{label}</p>
+        <p className="text-2xl font-bold mt-1">{value}</p>
+        {sub && <p className="text-xs text-white/60 mt-1">{sub}</p>}
+      </div>
+    );
+
+    /***********************************\
+     * Finance: Briefing               *
+    \***********************************/
+    function FinanceBriefing({ finance }) {
+      const cash = sum(finance.accounts, a => (a.balance > 0 ? a.balance : 0));
+      const debt = sum(finance.debts, d => d.balance);
+      const net = cash - debt;
+
+      const month = dayjs().format('YYYY-MM');
+      const monthlyIncome = sum(finance.incomes.filter(x=>x.date.startsWith(month)), x=>x.amount);
+      const monthlySpend = sum(finance.expenses.filter(x=>x.date.startsWith(month)), x=>x.amount) + sum(finance.debts.filter(d=>d.due.startsWith(month)), d=>d.min);
+
+      const needs = sum(finance.expenses.filter(e=>e.category==="Needs"), e=>e.amount);
+      const wants = sum(finance.expenses.filter(e=>e.category==="Wants"), e=>e.amount);
+      const pieData = [ {name:'Needs', value: needs}, {name:'Wants', value: wants} ];
+      const colors = ["#10b981","#3b86ff"]; // emerald, brand
+
+      // Simple cashflow series (fake small trend from seed)
+      const series = Array.from({length: 12}).map((_,i)=>({
+        name: dayjs().subtract(11-i,'month').format('MMM YY'),
+        income: 3800 + (i*30),
+        spend: 3000 + ((i%3)*50),
+      }));
+
+      return (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 space-y-6">
+            <SectionCard title="CASH FLOW (12M)" className="">
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={series} margin={{ left: 0, right: 0, top: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="inc" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.6}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="spn" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b86ff" stopOpacity={0.6}/>
+                        <stop offset="95%" stopColor="#3b86ff" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" />
+                    <XAxis dataKey="name" stroke="#9ca3af"/>
+                    <YAxis stroke="#9ca3af"/>
+                    <Tooltip/>
+                    <Legend/>
+                    <Area type="monotone" dataKey="income" stroke="#059669" fillOpacity={1} fill="url(#inc)" name="Income" />
+                    <Area type="monotone" dataKey="spend" stroke="#3b86ff" fillOpacity={1} fill="url(#spn)" name="Spending" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="NEEDS vs WANTS (Donut)">
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} label>
+                      {pieData.map((entry, index) => <Cell key={`c-${index}`} fill={colors[index % colors.length]} />)}
+                    </Pie>
+                    <Tooltip/>
+                    <Legend/>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className="space-y-4">
+            <Stat label="TOTAL CASH" value={currency(cash)} />
+            <Stat label="TOTAL DEBT" value={currency(debt)} />
+            <Stat label="NET POSITION" value={currency(net)} sub={net>=0?"On track":"Focus: reduce debt"} />
+            <Stat label="THIS MONTH INCOME" value={currency(monthlyIncome)} />
+            <Stat label="THIS MONTH SPEND" value={currency(monthlySpend)} />
+            <SectionCard title="HIGH INTEREST RATES">
+              <ul className="space-y-2 text-sm">
+                <li>HYSA: <b>{finance.rates.hysa_apr}% APR</b></li>
+                <li>Credit Card Avg: <b>{finance.rates.cc_avg_apr}% APR</b></li>
+                <li>Mortgage: <b>{finance.rates.mortgage_apr}% APR</b></li>
+              </ul>
+            </SectionCard>
+          </div>
+        </div>
+      );
+    }
+
+    /***********************************\
+     * Finance: Expense Tracker        *
+    \***********************************/
+    function ExpenseTracker({ finance, setFinance }) {
+      const [form, setForm] = useState({ date: dayjs().format('YYYY-MM-DD'), category: 'Needs', label: '', amount: '' });
+
+      const addExpense = () => {
+        const amt = parseFloat(form.amount);
+        if (!form.label || isNaN(amt)) return;
+        const e = { id: crypto.randomUUID(), ...form, amount: amt };
+        const updated = { ...finance, expenses: [e, ...finance.expenses] };
+        setFinance(updated);
+      };
+
+      const importCSV = (file) => {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (res) => {
+            const rows = res.data.map((r) => ({
+              id: crypto.randomUUID(),
+              date: r.date || dayjs().format('YYYY-MM-DD'),
+              category: r.category?.trim() || 'Needs',
+              label: r.label || r.description || 'Imported',
+              amount: parseFloat(r.amount || r.total || 0)
+            })).filter(r=>!isNaN(r.amount));
+            setFinance({ ...finance, expenses: [...rows, ...finance.expenses] });
+          }
+        });
+      };
+
+      const total = sum(finance.expenses, e=>e.amount);
+
+      return (
+        <div className="space-y-4">
+          <SectionCard title="ADD EXPENSE" right={<>
+            <label className="text-xs px-3 py-1.5 rounded-lg bg-white/10 cursor-pointer hover:bg-white/20">Import CSV
+              <input type="file" accept=".csv" className="hidden" onChange={(e)=>e.target.files[0] && importCSV(e.target.files[0])} />
+            </label>
+          </>}>
+            <div className="grid md:grid-cols-5 gap-3">
+              <input className="glass rounded-lg px-3 py-2" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} />
+              <select className="glass rounded-lg px-3 py-2" value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
+                <option>Needs</option>
+                <option>Wants</option>
+                <option>Debt</option>
+              </select>
+              <input className="glass rounded-lg px-3 py-2" placeholder="Label" value={form.label} onChange={e=>setForm({...form,label:e.target.value})} />
+              <input className="glass rounded-lg px-3 py-2" placeholder="Amount" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} />
+              <button className="rounded-lg bg-emerald-600 hover:bg-emerald-500 font-semibold" onClick={addExpense}>Add</button>
+            </div>
+          </SectionCard>
+
+          <SectionCard title={`EXPENSE LEDGER (${finance.expenses.length})`} right={<span className="text-sm text-white/60">Total: <b>{currency(total)}</b></span>}>
+            <div className="max-h-72 overflow-auto touch-scrollbar">
+              <table className="w-full text-left text-sm">
+                <thead className="text-white/70">
+                  <tr>
+                    <th className="py-2">Date</th>
+                    <th>Category</th>
+                    <th>Label</th>
+                    <th className="text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {finance.expenses.map((e)=> (
+                    <tr key={e.id} className="hover:bg-white/5">
+                      <td className="py-2">{e.date}</td>
+                      <td>{e.category}</td>
+                      <td>{e.label}</td>
+                      <td className="text-right">{currency(e.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
+      )
+    }
+
+    /***********************************\
+     * Finance: Payment Calendar       *
+    \***********************************/
+    function PaymentCalendar({ finance, setFinance }) {
+      const [cursor, setCursor] = useState(dayjs());
+      const monthLabel = cursor.format('MMMM YYYY');
+      const start = cursor.startOf('month');
+      const days = Array.from({length: start.daysInMonth()}, (_,i)=> start.date(i+1));
+
+      const items = [
+        ...finance.debts.map(d => ({ id: d.id, date: d.due, label: d.name, amount: d.min || 0 })),
+        ...finance.incomes.map(i => ({ id: i.id, date: i.date, label: i.source, amount: i.amount, income: true }))
+      ];
+
+      const addDue = () => {
+        const name = prompt('Bill / Payee name');
+        const date = prompt('Due date (YYYY-MM-DD)', cursor.format('YYYY-MM-') + String(Math.min(28, cursor.date())).padStart(2,'0'));
+        const amount = parseFloat(prompt('Amount', '0')||'0');
+        if (!name) return;
+        const newDebt = { id: crypto.randomUUID(), name, balance: amount, apr: 0, due: date, min: amount };
+        setFinance({ ...finance, debts: [...finance.debts, newDebt] });
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold">{monthLabel}</h3>
+            <div className="flex gap-2">
+              <button className="px-3 py-1 rounded-lg glass" onClick={()=>setCursor(cursor.subtract(1,'month'))}>Prev</button>
+              <button className="px-3 py-1 rounded-lg glass" onClick={()=>setCursor(cursor.add(1,'month'))}>Next</button>
+              <button className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={addDue}>Add Due</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=> (
+              <div key={d} className="text-xs text-white/60 text-center py-1">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {Array.from({length: start.day()}).map((_,i)=> <div key={"pad"+i}/>) }
+            {days.map((d) => {
+              const ds = d.format('YYYY-MM-DD');
+              const onDay = items.filter(x=> (x.date||'').startsWith(d.format('YYYY-MM')) && dayjs(x.date).date()===d.date());
+              return (
+                <div key={ds} className="glass rounded-xl p-2 min-h-[90px]">
+                  <div className="text-xs text-white/60">{d.date()}</div>
+                  <div className="space-y-1 mt-1">
+                    {onDay.map(x=> (
+                      <div key={x.id} className={`rounded-md px-2 py-1 text-xs flex items-center justify-between ${x.income? 'bg-emerald-600/30' : 'bg-brand-600/30'}`}>
+                        <span className="truncate mr-2">{x.label}</span>
+                        <span>{currency(x.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    /***********************************\
+     * Finance: Portfolio Lab          *
+    \***********************************/
+    function PortfolioLab({ portfolio, setPortfolio }) {
+      const total = sum(portfolio.positions, p=>p.value);
+      const pie = portfolio.positions.map(p=>({ name: p.symbol, value: p.value }));
+      const colors = ["#3b86ff", "#10b981", "#9965f4", "#f59e0b", "#ef4444"]; 
+
+      const addPos = () => {
+        const symbol = prompt('Ticker (e.g., VTI)');
+        const name = prompt('Name');
+        const value = parseFloat(prompt('Value', '1000')||'0');
+        if (!symbol || isNaN(value)) return;
+        setPortfolio({ ...portfolio, positions: [...portfolio.positions, { id: crypto.randomUUID(), symbol, name: name||symbol, value, change: 0 }] });
+      };
+
+      return (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <SectionCard title="ALLOCATION (Donut)" right={<button className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={addPos}>Add Position</button>}>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pie} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} label>
+                    {pie.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+                  </Pie>
+                  <Legend/>
+                  <Tooltip/>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="text-sm text-white/80">Total: <b>{currency(total)}</b></div>
+          </SectionCard>
+
+          <SectionCard title="POSITIONS">
+            <div className="max-h-72 overflow-auto touch-scrollbar">
+              <table className="w-full text-left text-sm">
+                <thead className="text-white/70">
+                  <tr>
+                    <th className="py-2">Symbol</th>
+                    <th>Name</th>
+                    <th className="text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {portfolio.positions.map(p=> (
+                    <tr key={p.id} className="hover:bg-white/5">
+                      <td className="py-2 font-semibold">{p.symbol}</td>
+                      <td>{p.name}</td>
+                      <td className="text-right">{currency(p.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    /***********************************\
+     * Legal Toolkit + AI Studio       *
+    \***********************************/
+    function LegalToolkit({ legal, setLegal }) {
+      const [task, setTask] = useState("");
+      const add = () => { if(!task) return; setLegal({ ...legal, toolkit: [...legal.toolkit, { id: crypto.randomUUID(), title: task, status: 'todo' }] }); setTask(""); };
+      const toggle = (id) => {
+        setLegal({ ...legal, toolkit: legal.toolkit.map(t => t.id===id? { ...t, status: t.status==='done'?'todo':'done'} : t) });
+      };
+
+      return (
+        <SectionCard title="LEGAL TOOLKIT">
+          <div className="flex gap-2 mb-3">
+            <input className="glass rounded-lg px-3 py-2 flex-1" placeholder="Add task (e.g., Draft Motion to Strike)" value={task} onChange={(e)=>setTask(e.target.value)} />
+            <button className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={add}>Add</button>
+          </div>
+          <ul className="space-y-2">
+            {legal.toolkit.map(t => (
+              <li key={t.id} className="glass rounded-lg p-3 flex items-center justify-between">
+                <span className={t.status==='done'?'line-through text-white/60':''}>{t.title}</span>
+                <button className="px-2 py-1 rounded bg-emerald-600/40" onClick={()=>toggle(t.id)}>{t.status==='done'? 'Undo' : 'Done'}</button>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      );
+    }
+
+    function LegalScratchpad({ legal, setLegal }) {
+      return (
+        <SectionCard title="AI STUDIO — Legal Scratchpad (offline)">
+          <textarea className="glass rounded-lg w-full h-64 p-3" placeholder="Outline arguments, facts, exhibits…" value={legal.aiScratch} onChange={(e)=>setLegal({ ...legal, aiScratch: e.target.value })} />
+          <p className="text-xs text-white/60 mt-2">Tip: Copy this into your preferred AI when ready. No external calls are made from this file.</p>
+        </SectionCard>
+      );
+    }
+
+    /***********************************\
+     * Family: Kids Corner             *
+    \***********************************/
+    function KidsCorner({ family, setFamily }) {
+      const [quiz, setQuiz] = useState({ a: "", b: "" });
+      useEffect(()=>{ newQuiz(); },[]);
+      const newQuiz = ()=> setQuiz({ a: Math.floor(Math.random()*12)+1, b: Math.floor(Math.random()*12)+1 });
+
+      const check = () => {
+        const ans = parseInt(prompt(`${quiz.a} × ${quiz.b} = ?`)||'0');
+        if (ans === quiz.a*quiz.b) alert('✅ Great job!'); else alert('Keep trying, you got this!');
+        newQuiz();
+      };
+
+      const toggleTodo = (id) => setFamily({ ...family, todos: family.todos.map(t=> t.id===id? { ...t, done: !t.done } : t) });
+
+      return (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <SectionCard title="MATH BLITZ">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl font-black">{quiz.a} × {quiz.b}</div>
+              <button className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={check}>Answer</button>
+              <button className="px-3 py-2 rounded-lg glass" onClick={newQuiz}>New</button>
+            </div>
+          </SectionCard>
+          <SectionCard title="TASKS & BADGES">
+            <ul className="space-y-2">
+              {family.todos.map(t => (
+                <li key={t.id} className="glass rounded-lg p-3 flex items-center justify-between">
+                  <span className={t.done? 'line-through text-white/60' : ''}>{t.text}</span>
+                  <button className="px-2 py-1 rounded bg-emerald-600/40" onClick={()=>toggleTodo(t.id)}>{t.done? 'Undo' : 'Done'}</button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 text-sm text-white/80">Badges: {family.kids.map(k=>`${k.name} (${k.badge})`).join(', ')}</div>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    /***********************************\
+     * System: Telemetry & Diagnostics *
+    \***********************************/
+    function Diagnostics({ system, setSystem }) {
+      const run = () => {
+        const t0 = performance.now();
+        // quick synthetic load
+        let z=0; for (let i=0;i<3e6;i++) z+=i%7;
+        const t1 = performance.now();
+        const rec = { id: crypto.randomUUID(), at: new Date().toISOString(), workMs: +(t1-t0).toFixed(1) };
+        setSystem({ ...system, diagnostics: [rec, ...system.diagnostics].slice(0,10) });
+      };
+
+      const exportJSON = () => {
+        const blob = new Blob([localStorage.getItem(STORAGE_KEY) || '{}'], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'einzbrock_dashboard_export.json';
+        a.click();
+      };
+
+      const exportPDF = async () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text('EINZBROCK — Snapshot', 14, 18);
+        doc.setFontSize(11);
+        doc.text(`Owner: ${loadState(seed).profile.owner}`, 14, 28);
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 34);
+        const st = loadState(seed);
+        const cash = st.finance.accounts.filter(a=>a.balance>0).reduce((a,b)=>a+b.balance,0);
+        const debt = st.finance.debts.reduce((a,b)=>a+b.balance,0);
+        doc.text(`Total Cash: $${cash.toLocaleString()}`, 14, 46);
+        doc.text(`Total Debt: $${debt.toLocaleString()}`, 14, 52);
+        doc.text('Top Accounts:', 14, 64);
+        st.finance.accounts.slice(0,5).forEach((a,i)=> doc.text(`• ${a.name}: ${a.balance>=0?'$':''}${a.balance.toLocaleString()}`, 20, 76+i*6));
+        doc.save('einzbrock_snapshot.pdf');
+      };
+
+      return (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <SectionCard title="DEVELOPER DIAGNOSTICS" right={<button className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={run}>Run Self-Test</button>}>
+            <ul className="space-y-2 text-sm">
+              {system.diagnostics.map(d => (
+                <li key={d.id} className="glass rounded-lg p-2 flex items-center justify-between">
+                  <span>{new Date(d.at).toLocaleString()}</span>
+                  <span>{d.workMs} ms</span>
+                </li>
+              ))}
+              {system.diagnostics.length===0 && <li className="text-white/60">No runs yet. Click <b>Run Self-Test</b>.</li>}
+            </ul>
+          </SectionCard>
+
+          <SectionCard title="EXPORT / BACKUP">
+            <div className="flex gap-2">
+              <button className="px-3 py-2 rounded-lg glass" onClick={exportJSON}>Download JSON</button>
+              <button className="px-3 py-2 rounded-lg glass" onClick={()=>{localStorage.removeItem(STORAGE_KEY); location.reload();}}>Reset App</button>
+              <button className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500" onClick={exportPDF}>Export PDF</button>
+            </div>
+            <p className="text-xs text-white/60 mt-2">JSON preserves all tabs. PDF creates a quick investor-friendly snapshot.</p>
+          </SectionCard>
+        </div>
+      );
+    }
+
+    /***********************************\
+     * Root: Tabs + Layout             *
+    \***********************************/
+    const TABS = {
+      Finance: ["Briefing","Portfolio Lab","Payment Calendar","Expense Tracker"],
+      Legal: ["Legal Toolkit","AI Studio"],
+      Family: ["Kids Corner"],
+      System: ["Telemetry","Developer Diagnostics","Settings"],
+    };
+
+    function App() {
+      const [profile, setProfile] = usePersistentState('profile', seed.profile);
+      const [finance, setFinance] = usePersistentState('finance', seed.finance);
+      const [portfolio, setPortfolio] = usePersistentState('portfolio', seed.portfolio);
+      const [legal, setLegal] = usePersistentState('legal', seed.legal);
+      const [family, setFamily] = usePersistentState('family', seed.family);
+      const [system, setSystem] = usePersistentState('system', seed.system);
+
+      // nav state
+      const [tab, setTab] = useState('Finance');
+      const [sub, setSub] = useState('Briefing');
+
+      useEffect(()=>{ document.title = `EINZBROCK — ${tab} • ${sub}` }, [tab, sub]);
+
+      const Brand = () => (
+        <div className="flex items-center gap-3 select-none">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-brand-600 to-emerald-600 shadow-glow grid place-items-center font-black">E</div>
+          <div>
+            <div className="text-xs tracking-widest text-white/60">ULTRA • QUANTUM</div>
+            <div className="text-xl font-black">EINZBROCK</div>
+          </div>
+        </div>
+      );
+
+      const Topbar = () => (
+        <div className="sticky top-0 z-40 glass rounded-2xl px-4 py-3 flex items-center justify-between">
+          <Brand/>
+          <div className="flex items-center gap-2">
+            <input className="hidden md:block glass rounded-lg px-3 py-2 w-64" placeholder="Quick find (offline)" />
+            <button className="px-3 py-2 rounded-lg glass" onClick={()=>{navigator.clipboard.writeText(window.location.href);}}>Copy Link</button>
+            <button className="px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500" onClick={()=>{ saveState({ profile, finance, portfolio, legal, family, system }); alert('Saved!'); }}>Save</button>
+          </div>
+        </div>
+      );
+
+      const Sidebar = () => (
+        <div className="glass rounded-2xl p-3 h-full">
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
+            {Object.keys(TABS).map(k=> (
+              <button key={k} onClick={()=>{setTab(k); setSub(TABS[k][0]);}}
+                className={`px-3 py-2 rounded-xl text-left ${tab===k? 'bg-brand-600' : 'glass hover:bg-white/10'}`}>
+                <div className="text-xs tracking-widest">{k.toUpperCase()}</div>
+                <div className="text-white/70 text-xs">{TABS[k].join(' • ')}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs uppercase tracking-widest text-white/60 mb-2">SECTION</div>
+            <div className="flex flex-wrap gap-2">
+              {TABS[tab].map(s => (
+                <button key={s} onClick={()=>setSub(s)} className={`px-3 py-1.5 rounded-full text-xs ${sub===s? 'bg-emerald-600' : 'glass hover:bg-white/10'}`}>{s}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 text-xs text-white/60">
+            <div>Owner: <b>{profile.owner}</b></div>
+            <div>Theme: <b>{profile.theme}</b></div>
+          </div>
+        </div>
+      );
+
+      const Content = () => (
+        <div className="space-y-6">
+          {tab === 'Finance' && sub === 'Briefing' && <FinanceBriefing finance={finance} />}
+          {tab === 'Finance' && sub === 'Expense Tracker' && <ExpenseTracker finance={finance} setFinance={setFinance} />}
+          {tab === 'Finance' && sub === 'Payment Calendar' && <PaymentCalendar finance={finance} setFinance={setFinance} />}
+          {tab === 'Finance' && sub === 'Portfolio Lab' && <PortfolioLab portfolio={portfolio} setPortfolio={setPortfolio} />}
+
+          {tab === 'Legal' && sub === 'Legal Toolkit' && <LegalToolkit legal={legal} setLegal={setLegal} />}
+          {tab === 'Legal' && sub === 'AI Studio' && <LegalScratchpad legal={legal} setLegal={setLegal} />}
+
+          {tab === 'Family' && sub === 'Kids Corner' && <KidsCorner family={family} setFamily={setFamily} />}
+
+          {tab === 'System' && sub === 'Developer Diagnostics' && <Diagnostics system={system} setSystem={setSystem} />}
+          {tab === 'System' && sub === 'Telemetry' && (
+            <SectionCard title="TELEMETRY (Live)">
+              <div className="text-sm text-white/70">This lightweight build keeps runtime offline for Gemini Canvas. For deeper metrics, connect to your preferred telemetry in a future module.</div>
+            </SectionCard>
+          )}
+          {tab === 'System' && sub === 'Settings' && (
+            <SectionCard title="SETTINGS">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm">Owner</label>
+                  <input className="glass rounded-lg px-3 py-2 w-full" value={profile.owner} onChange={(e)=>setProfile({ ...profile, owner: e.target.value.toUpperCase() })} />
+                </div>
+                <div>
+                  <label className="text-sm">Theme</label>
+                  <select className="glass rounded-lg px-3 py-2 w-full" value={profile.theme} onChange={(e)=>setProfile({ ...profile, theme: e.target.value })}>
+                    <option value="dark">Dark</option>
+                    <option value="light">Light</option>
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-white/60 mt-3">All settings persist locally via <code>localStorage</code> for Canvas compatibility.</p>
+            </SectionCard>
+          )}
+        </div>
+      );
+
+      return (
+        <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+          <Topbar/>
+          <div className="grid md:grid-cols-[260px,1fr] gap-6">
+            <Sidebar/>
+            <Content/>
+          </div>
+          <footer className="text-center text-xs text-white/50 pt-6">© {new Date().getFullYear()} EINZBROCK — Finance • Legal • Family • System</footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
